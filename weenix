@@ -1,0 +1,187 @@
+#!/bin/bash
+
+USAGE="Usage: $0 [OPTION]...
+-h --help            Display this help dialog.
+-m --machine <arg>   Run on the specified machine. The default is
+                     'qemu', which is also currently the only supported
+                     machine.
+-c --check           Enable memcheck leak detection. Requires -d gdb.
+-d --debug <arg>     Run with debugging support. 'gdb' will start gdb
+                     and 'qemu' will start the qemu monitor.
+-w --wait <arg>      Wait <arg> seconds for gdb to attach (use only if
+                     GDBWAIT=1 in Config.mk).
+-n --new-disk        Use a fresh copy of the hard disk image.
+"
+
+# XXX hardcoding these temporarily -- should be read from the makefiles
+GDB_TMP_INIT=inittmp.gdb
+KERN_DIR=kernel
+ISO_IMAGE=weenix.iso
+SYMBOLS=weenix.dbg
+GDB_COMM_INIT=commands.gdb
+GDB_INIT=init.gdb
+GDB_MEMCHECK=memcheck.gdb
+GDBCOMM=gdb-commands
+QEMU=qemu-system-i386
+QEMU_FLAGS="-k en-us -boot order=dca"
+if ! which $QEMU; then
+	QEMU=qemu
+	if ! which $QEMU; then
+		echo "Unable to find qemu." >&2
+		exit 2
+	fi
+fi
+
+# If we're on qemu version > 1.0, add the -no-kvm flag to avoid errors
+# qemu >= 1.1 uses -machine accel=... and thus kvm is off by default
+if $QEMU -version | grep "version 1.0"; then
+	QEMU_FLAGS+=" -no-kvm"
+fi
+
+GDB=gdb
+GDB_PORT=1234
+GDB_TERM=xterm
+MEMORY=256
+
+cd $(dirname $0)
+
+TEMP=$(getopt -o hcqxyw:m:d:n --long help,check,qemu-monitor,xmode,ymode,wait:,machine:,debug:,new-disk -n "$0" -- "$@")
+if [ $? != 0 ] ; then
+	exit 2
+fi
+
+machine=qemu
+dbgmode="run"
+pausetime="10"
+gdbwait=
+newdisk=
+memcheck=
+lefttmux=
+righttmux=
+eval set -- "$TEMP"
+while true ; do
+	case "$1" in
+		-h|--help) echo "$USAGE" >&2 ; exit 0 ;;
+		-c|--check) memcheck=1 ; shift ;;
+		-n|--new-disk) newdisk=1 ; shift ;;
+		-w|--wait) gdbwait=1 ; pausetime="$2" ; shift 2 ;;
+		-m|--machine) machine="$2" ; shift 2 ;;
+		-d|--debug) dbgmode="$2" ; shift 2 ;;
+		-x|--tmux-mode-left) lefttmux=1 ; shift ;;
+		-y|--tmux-mode-right) righttmux=1 ; shift ;;
+		--) shift ; break ;;
+		*) echo "Argument error." >&2 ; exit 2 ;;
+	esac
+done
+
+MEMCHECK_INIT=
+if [[ -n "$memcheck" ]]
+then
+    case $dbgmode in
+        gdb)
+            MEMCHECK_INIT="-x $GDB_MEMCHECK"
+            ;;
+        *)
+            echo "memcheck is only supported with -d gdb" >&2
+            exit 2
+            ;;
+    esac
+fi
+GDB_FLAGS="-x $GDB_TMP_INIT -s $KERN_DIR/$SYMBOLS -x $GDB_COMM_INIT $MEMCHECK_INIT -x $GDB_INIT"
+rm -f "$GDB_COMM_INIT"
+cat "$KERN_DIR/$GDBCOMM" | grep -E ".(gdb|py)$" | while read file
+do
+	echo "source $file" >> "$GDB_COMM_INIT"
+done
+#
+# The above 4 lines will enable "kernel" gdb commands (try "help kernel" in gdb).
+# If you get "No module named weenix" error when you start weenix with gdb, you should do:
+#
+#     pushd python; tar cvf - weenix | (cd /usr/share/gdb/python; sudo tar xvf -); popd
+#
+
+case $machine in
+	qemu)
+		if [[ -n "$newdisk" || ! ( -f disk0.img ) ]]; then
+			cp -f user/disk0.img disk0.img
+		fi
+
+		if [[ -n "$lefttmux" || -n "$righttmux" ]]; then
+			if [[ -n "$righttmux" ]]; then
+				# If qemu-system-i386 is running already, kill it
+				QEMU_PID=`ps x | grep qemu-system-i386 | grep -v xterm | grep -v grep | cut -c1-5`
+				if [[ $QEMU_PID != "" ]]; then
+					kill ${QEMU_PID}
+					echo "existing qemu-system-i386 killed"
+					sleep 1
+				fi
+			fi
+		else
+			# If qemu-system-i386 is running already, kill it
+			QEMU_PID=`ps x | grep qemu-system-i386 | grep -v xterm | grep -v grep | cut -c1-5`
+			if [[ $QEMU_PID != "" ]]; then
+				kill ${QEMU_PID}
+				echo "existing qemu-system-i386 killed"
+				sleep 1
+			fi
+		fi
+
+		case $dbgmode in
+			run)
+				# $QEMU $QEMU_FLAGS -m "$MEMORY" -cdrom "$KERN_DIR/$ISO_IMAGE" -serial stdio -hda disk0.img
+				$QEMU $QEMU_FLAGS -m "$MEMORY" -cdrom "$KERN_DIR/$ISO_IMAGE" -drive format=raw,file=disk0.img -serial stdio | tee weenix.log
+				;;
+			gdb)
+				if [[ -n "$lefttmux" || -n "$righttmux" ]]; then
+					if [[ -n "$lefttmux" ]]; then
+						# Build the gdb initialization script
+						echo "target remote localhost:$GDB_PORT" > $GDB_TMP_INIT
+						echo "python sys.path.append(\"$(pwd)/python\")" >> $GDB_TMP_INIT
+
+						$GDB $GDB_FLAGS | tee leftpane.log
+					else
+						if [[ -n "$gdbwait" ]]; then
+							$QEMU $QEMU_FLAGS -m "$MEMORY" -cdrom "$KERN_DIR/$ISO_IMAGE" -drive format=raw,file=disk0.img -serial stdio -s | tee rightpane.log
+						else
+							echo "ERROR: if you run with \"-d gdb\", you must specify \"-w <pausetime>\"" >&2
+							echo "$USAGE" >&2
+							exit 1
+						fi
+					fi
+				else
+					# Build the gdb initialization script
+					echo "target remote localhost:$GDB_PORT" > $GDB_TMP_INIT
+					echo "python sys.path.append(\"$(pwd)/python\")" >> $GDB_TMP_INIT
+
+					if [[ -n "$gdbwait" ]]; then
+						# $GDB_TERM -e $QEMU $QEMU_FLAGS -m "$MEMORY" -cdrom "$KERN_DIR/$ISO_IMAGE" disk0.img -s -S -daemonize
+						# $GDB_TERM -e $QEMU $QEMU_FLAGS -m "$MEMORY" -cdrom "$KERN_DIR/$ISO_IMAGE" -hda disk0.img -serial stdio -s &
+						# $GDB_TERM -e $QEMU $QEMU_FLAGS -m "$MEMORY" -cdrom "$KERN_DIR/$ISO_IMAGE" -drive format=raw,file=disk0.img -serial stdio -s &
+						$GDB_TERM -e "$QEMU $QEMU_FLAGS -m $MEMORY -cdrom $KERN_DIR/$ISO_IMAGE -drive format=raw,file=disk0.img -serial stdio -s | tee weenix.log" &
+						sleep "$pausetime"
+					else
+						echo "ERROR: if you run with \"-d gdb\", you must specify \"-w <pausetime>\"" >&2
+						echo "$USAGE" >&2
+						exit 1
+					fi
+					$GDB $GDB_FLAGS
+				fi
+				;;
+			qemu)
+				$QEMU $QEMU_FLAGS -m "$MEMORY" -cdrom "$KERN_DIR/$ISO_IMAGE" -monitor stdio -hda disk0.img
+                ;;
+			*)
+				echo "'$dbgmode' is an unknown debug mode for the '$machine' machine type." >&2
+				echo "Valid modes: gdb" >&2
+				echo "$USAGE" >&2
+				exit 1
+				;;
+		esac
+		;;
+	*)
+		echo "'$machine' is an unknown machine type." >&2
+		echo "Valid machines: qemu" >&2
+		echo "$USAGE" >&2
+		exit 1
+		;;
+esac

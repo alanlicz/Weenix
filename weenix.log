@@ -1,0 +1,16 @@
+Waiting for gdb to start ...
+[31;40mSIGNATURE: 53616c7465645f5f01bbab796ed47c2ba53d403c2eb773558e7857a5070e63a978fe1e6adef1f419e1694676014b75f8
+[0m[31;40mtest/kshell/kshell.c:98 kshell_add_command(): Added help command
+[0m[31;40mtest/kshell/kshell.c:98 kshell_add_command(): Added echo command
+[0m[31;40mtest/kshell/kshell.c:98 kshell_add_command(): Added cat command
+[0m[31;40mtest/kshell/kshell.c:98 kshell_add_command(): Added ls command
+[0m[31;40mtest/kshell/kshell.c:98 kshell_add_command(): Added cd command
+[0m[31;40mtest/kshell/kshell.c:98 kshell_add_command(): Added rm command
+[0m[31;40mtest/kshell/kshell.c:98 kshell_add_command(): Added link command
+[0m[31;40mtest/kshell/kshell.c:98 kshell_add_command(): Added rmdir command
+[0m[31;40mtest/kshell/kshell.c:98 kshell_add_command(): Added mkdir command
+[0m[31;40mtest/kshell/kshell.c:98 kshell_add_command(): Added stat command
+[0m[31;40mtest/kshell/kshell.c:98 kshell_add_command(): Added exit command
+[0mweenix: vfs shutdown...
+
+weenix: halted cleanly!

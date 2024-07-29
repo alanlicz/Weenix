@@ -1,0 +1,24 @@
+#!/bin/bash
+
+session_name="weenix-tmux"
+
+RUNNING=`tmux list-sessions | grep "${session_name}:"`
+if [[ $RUNNING != "" ]]; then
+	echo "Session '${session_name}' already exists"
+else
+	# create 4 panes, one at the bottom, two on the left, and one on the right
+
+	# create a tmux session
+	tmux new-session -d -s ${session_name} '
+		echo "[ Please do the following to run gdb in the left pane                       ]"; \
+		echo "[   1) type <Ctrl+b> then <Left> to move the text cursor into the left pane ]"; \
+		echo "[   2) type <Ctrl+d> after right pane prints "\""waiting for gdb to start ..."\"" ]"; \
+		echo "[   3) please be reminded that you cannot use the "\""layout"\"" gdb command here ]"; cat; \
+		./weenix -n -d gdb -w 1 -x'
+	# split the current pane vertically 95/5
+	tmux split-window -v -p 5
+	# split the top pane horizontally 60/40
+	tmux split-window -h -t top -p 40 './weenix -n -d gdb -w 1 -y'
+
+	tmux attach-session -d -t ${session_name}
+fi

@@ -1,0 +1,10 @@
+source /home/student/Desktop/kernel1/kernel/main/gdt.gdb
+source /home/student/Desktop/kernel1/kernel/mm/pagetable.gdb
+source /home/student/Desktop/kernel1/kernel/mm/page.py
+source /home/student/Desktop/kernel1/kernel/mm/memcheck.py
+source /home/student/Desktop/kernel1/kernel/mm/slab.py
+source /home/student/Desktop/kernel1/kernel/proc/kthread.gdb
+source /home/student/Desktop/kernel1/kernel/proc/proc.py
+source /home/student/Desktop/kernel1/kernel/util/debug.py
+source /home/student/Desktop/kernel1/kernel/util/list.py
+source /home/student/Desktop/kernel1/kernel/vm/vmmap.gdb
